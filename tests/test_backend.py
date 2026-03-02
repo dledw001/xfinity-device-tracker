@@ -64,7 +64,9 @@ def test_fetch_connected_devices_html_raises_on_unexpected_payload(monkeypatch):
         FakeResponse(status_code=302, headers={"Location": "/index.jst"}),
         [
             FakeResponse(status_code=200, text="landing"),
-            FakeResponse(status_code=200, text="<html><body>no devices here</body></html>"),
+            FakeResponse(
+                status_code=200, text="<html><body>no devices here</body></html>"
+            ),
         ],
     )
     monkeypatch.setattr("backend.requests.Session", lambda: fake_session)
@@ -78,7 +80,10 @@ def test_fetch_connected_devices_html_returns_payload(monkeypatch):
     payload = "<div class='device-info'>connected_devices_computers</div>"
     fake_session = FakeSession(
         FakeResponse(status_code=302, headers={"Location": "/index.jst"}),
-        [FakeResponse(status_code=200, text="landing"), FakeResponse(status_code=200, text=payload)],
+        [
+            FakeResponse(status_code=200, text="landing"),
+            FakeResponse(status_code=200, text=payload),
+        ],
     )
     monkeypatch.setattr("backend.requests.Session", lambda: fake_session)
     client = RouterClient("https://10.0.0.1", "user", "pass")

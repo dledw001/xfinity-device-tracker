@@ -59,8 +59,7 @@ def init_db(conn: sqlite3.Connection) -> None:
 def _migrate_devices_table(conn: sqlite3.Connection) -> None:
     # Keep existing DBs forward-compatible as the devices schema grows.
     existing = {
-        row["name"]
-        for row in conn.execute("PRAGMA table_info(devices)").fetchall()
+        row["name"] for row in conn.execute("PRAGMA table_info(devices)").fetchall()
     }
     wanted = {
         "friendly_name": "TEXT",
@@ -92,7 +91,9 @@ def upsert_device(
     )
 
 
-def insert_observations(conn: sqlite3.Connection, rows: Iterable[Dict[str, Any]]) -> None:
+def insert_observations(
+    conn: sqlite3.Connection, rows: Iterable[Dict[str, Any]]
+) -> None:
     conn.executemany(
         """
         INSERT INTO observations(

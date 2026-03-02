@@ -23,7 +23,11 @@ class RouterClient:
     def login(self) -> str:
         r = self.session.post(
             f"{self.base_url}/check.jst",
-            data={"username": self.username, "password": self.password, "locale": "false"},
+            data={
+                "username": self.username,
+                "password": self.password,
+                "locale": "false",
+            },
             allow_redirects=False,
             timeout=10,
         )
@@ -42,11 +46,15 @@ class RouterClient:
     def fetch_connected_devices_html(self) -> str:
         self.login()
 
-        page = self.session.get(f"{self.base_url}/connected_devices_computers.jst", timeout=10)
+        page = self.session.get(
+            f"{self.base_url}/connected_devices_computers.jst", timeout=10
+        )
         page.raise_for_status()
 
         html = page.text
         if "connected_devices_computers" not in html and "device-info" not in html:
-            raise RuntimeError("Did not receive connected devices payload (unexpected HTML).")
+            raise RuntimeError(
+                "Did not receive connected devices payload (unexpected HTML)."
+            )
 
         return html

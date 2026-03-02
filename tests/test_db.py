@@ -20,7 +20,9 @@ def test_upsert_device_inserts_then_updates(tmp_path):
     conn = connect(db_path)
     init_db(conn)
 
-    upsert_device(conn, mac="AA:BB", seen_at="2026-03-02T00:00:00+00:00", host_name="Laptop")
+    upsert_device(
+        conn, mac="AA:BB", seen_at="2026-03-02T00:00:00+00:00", host_name="Laptop"
+    )
     upsert_device(conn, mac="AA:BB", seen_at="2026-03-02T00:05:00+00:00", host_name="")
     conn.commit()
 
@@ -36,7 +38,9 @@ def test_insert_observations_persists_rows(tmp_path):
     db_path = tmp_path / "router.db"
     conn = connect(db_path)
     init_db(conn)
-    upsert_device(conn, mac="AA:BB", seen_at="2026-03-02T00:00:00+00:00", host_name="Laptop")
+    upsert_device(
+        conn, mac="AA:BB", seen_at="2026-03-02T00:00:00+00:00", host_name="Laptop"
+    )
     rows = [
         {
             "mac": "AA:BB",

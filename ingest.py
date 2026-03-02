@@ -7,8 +7,10 @@ from bs4.element import Tag
 
 from db import connect, init_db, upsert_device, insert_observations
 
+
 def now_iso_utc() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
 
 def clean_text(s: Optional[str]) -> Optional[str]:
     if s is None:
@@ -30,12 +32,12 @@ def parse_rssi_dbm(s: Optional[str]) -> Optional[int]:
     m = re.search(r"-?\d+", s)
     return int(m.group(0)) if m else None
 
+
 def find_device_name_text(host_td: Tag) -> Optional[str]:
     name_a = host_td.find(
         "a",
-        class_=lambda c: isinstance(c, (str, list)) and (
-            ("device-name" in c) if isinstance(c, str) else ("device-name" in c)
-        ),
+        class_=lambda c: isinstance(c, (str, list))
+        and (("device-name" in c) if isinstance(c, str) else ("device-name" in c)),
     )
     if not name_a:
         name_a = host_td.find("a")
@@ -74,7 +76,11 @@ def dl_to_map(device_info_div: Optional[Tag]) -> Dict[str, str]:
     # Router legacy format: <dd><b>Label</b>...</dd>value_text<dd>...
     for dd in dl.find_all("dd"):
         label_tag = dd.find("b")
-        label = clean_text(label_tag.get_text(" ", strip=True) if label_tag else dd.get_text(" ", strip=True))
+        label = clean_text(
+            label_tag.get_text(" ", strip=True)
+            if label_tag
+            else dd.get_text(" ", strip=True)
+        )
         if not label:
             continue
 
@@ -181,6 +187,7 @@ def parse_connected_devices(html: str) -> List[Dict[str, Any]]:
     )
     return online + offline
 
+
 def ingest_html_snapshot(db_path: str, html: str) -> Dict[str, Any]:
     seen_at = now_iso_utc()
     rows = parse_connected_devices(html)
@@ -200,4 +207,9 @@ def ingest_html_snapshot(db_path: str, html: str) -> Dict[str, Any]:
     online_count = sum(1 for r in rows if r["status"] == "online")
     offline_count = sum(1 for r in rows if r["status"] == "offline")
 
-    return {"seen_at": seen_at, "online": online_count, "offline": offline_count, "total": len(rows)}
+    return {
+        "seen_at": seen_at,
+        "online": online_count,
+        "offline": offline_count,
+        "total": len(rows),
+    }
