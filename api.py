@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from threading import Event, Thread
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +28,56 @@ class DevicePatchRequest(BaseModel):
     notes: Optional[str] = None
     is_hidden: Optional[bool] = None
     is_tracked: Optional[bool] = None
+    model_config = {"extra": "forbid"}
+
+
+class HealthResponse(BaseModel):
+    ok: bool
+    last_ingest: Optional[str] = None
+    last_error: Optional[str] = None
+    last_error_at: Optional[str] = None
+    consecutive_failures: int
+    poll_seconds: int
+
+
+class DeviceSnapshot(BaseModel):
+    mac: str
+    status: str
+    host_name: Optional[str] = None
+    dhcp_mode: Optional[str] = None
+    rssi_dbm: Optional[int] = None
+    connection_type: Optional[str] = None
+    ipv4: Optional[str] = None
+    ipv6_global: Optional[str] = None
+    ipv6_linklocal: Optional[str] = None
+    friendly_name: Optional[str] = None
+    category: Optional[str] = None
+    notes: Optional[str] = None
+    is_hidden: bool
+    is_tracked: bool
+    last_host_name: Optional[str] = None
+    first_seen: str
+    last_seen: str
+    display_name: str
+
+
+class DevicesLatestResponse(BaseModel):
+    seen_at: str
+    count: int
+    devices: List[DeviceSnapshot]
+
+
+class DeviceMetadataResponse(BaseModel):
+    mac: str
+    first_seen: str
+    last_seen: str
+    last_host_name: Optional[str] = None
+    notes: Optional[str] = None
+    friendly_name: Optional[str] = None
+    category: Optional[str] = None
+    is_hidden: bool
+    is_tracked: bool
+    display_name: str
 
 
 def require_token(x_token: Optional[str]) -> None:
@@ -137,7 +187,7 @@ def fetch_latest_devices_payload() -> Dict[str, Any]:
     return {"seen_at": seen_at, "count": len(materialized), "devices": materialized}
 
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 def health():
     return {
         "ok": STATE["last_error"] is None,
@@ -149,29 +199,33 @@ def health():
     }
 
 
-@app.get("/devices/latest")
+@app.get("/devices/latest", response_model=DevicesLatestResponse)
 def devices_latest(x_token: Optional[str] = Header(default=None)):
     require_token(x_token)
     return fetch_latest_devices_payload()
 
 
-@app.get("/devices")
+@app.get("/devices", response_model=DevicesLatestResponse)
 def devices_list(x_token: Optional[str] = Header(default=None)):
     require_token(x_token)
     return fetch_latest_devices_payload()
 
 
-@app.patch("/devices/{mac}")
+@app.patch("/devices/{mac}", response_model=DeviceMetadataResponse)
 def update_device(
     mac: str, patch: DevicePatchRequest, x_token: Optional[str] = Header(default=None)
 ):
     require_token(x_token)
 
+    raw_update_map = patch.model_dump(exclude_unset=True)
     update_map: Dict[str, Any] = {}
-    for field in ("friendly_name", "category", "notes", "is_hidden", "is_tracked"):
-        val = getattr(patch, field)
-        if val is not None:
-            update_map[field] = int(val) if isinstance(val, bool) else val
+    for field, val in raw_update_map.items():
+        if field in ("is_hidden", "is_tracked"):
+            if val is None:
+                raise HTTPException(status_code=400, detail=f"{field} cannot be null")
+            update_map[field] = int(bool(val))
+        else:
+            update_map[field] = val
 
     if not update_map:
         raise HTTPException(status_code=400, detail="no fields to update")

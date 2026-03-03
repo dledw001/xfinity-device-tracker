@@ -34,6 +34,24 @@ def test_dl_to_map_parses_dt_dd_pairs():
     assert parsed["IPv4 Address"] == "10.0.0.2"
 
 
+def test_dl_to_map_parses_legacy_dd_b_label_format():
+    html = """
+    <div class="device-info">
+      <dl>
+        <dd><b>MAC Address</b></dd> AA:BB:CC:DD:EE:FF
+        <dd><b>IPv4 Address</b></dd> 10.0.0.2
+      </dl>
+    </div>
+    """
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "lxml")
+    parsed = dl_to_map(soup.find("div"))
+
+    assert parsed["MAC Address"] == "AA:BB:CC:DD:EE:FF"
+    assert parsed["IPv4 Address"] == "10.0.0.2"
+
+
 def test_parse_connected_devices_parses_online_and_offline_rows():
     html = """
     <div id="online-private">

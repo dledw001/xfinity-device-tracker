@@ -66,3 +66,40 @@ def test_insert_observations_persists_rows(tmp_path):
     assert row["status"] == "online"
     assert row["host_name"] == "Laptop"
     assert row["rssi_dbm"] == -55
+
+
+def test_init_db_migrates_legacy_devices_table(tmp_path):
+    db_path = tmp_path / "router.db"
+    conn = connect(db_path)
+    conn.executescript("""
+        CREATE TABLE devices (
+          mac TEXT PRIMARY KEY,
+          first_seen TEXT NOT NULL,
+          last_seen TEXT NOT NULL,
+          last_host_name TEXT,
+          notes TEXT
+        );
+        """)
+    conn.execute("""
+        INSERT INTO devices(mac, first_seen, last_seen, last_host_name, notes)
+        VALUES('AA:BB', '2026-03-02T00:00:00+00:00', '2026-03-02T00:00:00+00:00', 'wlan0', 'legacy')
+        """)
+    conn.commit()
+
+    init_db(conn)
+
+    columns = {
+        r["name"]: r for r in conn.execute("PRAGMA table_info(devices)").fetchall()
+    }
+    row = conn.execute("SELECT * FROM devices WHERE mac='AA:BB'").fetchone()
+    conn.close()
+
+    assert "friendly_name" in columns
+    assert "category" in columns
+    assert "is_hidden" in columns
+    assert "is_tracked" in columns
+    assert row["notes"] == "legacy"
+    assert row["friendly_name"] is None
+    assert row["category"] is None
+    assert row["is_hidden"] == 0
+    assert row["is_tracked"] == 1

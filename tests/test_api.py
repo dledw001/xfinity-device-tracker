@@ -1,5 +1,6 @@
 import importlib
 import sys
+from unittest.mock import Mock
 
 import pytest
 from fastapi import HTTPException
@@ -26,6 +27,18 @@ def test_require_token_rejects_invalid_token(tmp_path, monkeypatch):
     with pytest.raises(HTTPException) as exc:
         api.require_token("wrong")
     assert exc.value.status_code == 401
+
+
+def test_protected_endpoints_require_token(tmp_path, monkeypatch):
+    api = load_api_module(monkeypatch, tmp_path / "router.db")
+
+    with pytest.raises(HTTPException) as latest_exc:
+        api.devices_latest(x_token=None)
+    assert latest_exc.value.status_code == 401
+
+    with pytest.raises(HTTPException) as list_exc:
+        api.devices_list(x_token="bad")
+    assert list_exc.value.status_code == 401
 
 
 def test_devices_latest_returns_data_for_latest_snapshot(tmp_path, monkeypatch):
@@ -193,3 +206,145 @@ def test_update_device_patch_rejects_empty_payload(tmp_path, monkeypatch):
     with pytest.raises(HTTPException) as exc:
         api.update_device("AA:BB", api.DevicePatchRequest(), x_token="token123")
     assert exc.value.status_code == 400
+
+
+def test_update_device_patch_404_for_unknown_device(tmp_path, monkeypatch):
+    db_path = tmp_path / "router.db"
+    api = load_api_module(monkeypatch, db_path)
+
+    with pytest.raises(HTTPException) as exc:
+        api.update_device(
+            "AA:BB",
+            api.DevicePatchRequest(friendly_name="Unknown"),
+            x_token="token123",
+        )
+    assert exc.value.status_code == 404
+
+
+def test_update_device_patch_allows_clearing_nullable_string_fields(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "router.db"
+    api = load_api_module(monkeypatch, db_path)
+
+    conn = connect(db_path)
+    init_db(conn)
+    upsert_device(
+        conn, mac="AA:BB", seen_at="2026-03-02T00:00:00+00:00", host_name="wlan0"
+    )
+    conn.commit()
+    conn.close()
+
+    api.update_device(
+        "AA:BB",
+        api.DevicePatchRequest(
+            friendly_name="Office TV", category="tv", notes="Legacy note"
+        ),
+        x_token="token123",
+    )
+    patched = api.update_device(
+        "AA:BB",
+        api.DevicePatchRequest(friendly_name=None, category=None, notes=None),
+        x_token="token123",
+    )
+
+    assert patched["friendly_name"] is None
+    assert patched["category"] is None
+    assert patched["notes"] is None
+    assert patched["display_name"] == "wlan0"
+
+
+def test_update_device_patch_rejects_null_bool_fields(tmp_path, monkeypatch):
+    db_path = tmp_path / "router.db"
+    api = load_api_module(monkeypatch, db_path)
+
+    conn = connect(db_path)
+    init_db(conn)
+    upsert_device(
+        conn, mac="AA:BB", seen_at="2026-03-02T00:00:00+00:00", host_name="wlan0"
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(HTTPException) as exc:
+        api.update_device(
+            "AA:BB",
+            api.DevicePatchRequest(is_hidden=None),
+            x_token="token123",
+        )
+    assert exc.value.status_code == 400
+
+
+def test_poll_loop_sets_success_state(tmp_path, monkeypatch):
+    db_path = tmp_path / "router.db"
+    api = load_api_module(monkeypatch, db_path)
+
+    class StopAfterOneWait:
+        def __init__(self):
+            self._done = False
+
+        def is_set(self):
+            return self._done
+
+        def wait(self, _seconds):
+            self._done = True
+
+    fake_client = Mock()
+    fake_client.fetch_connected_devices_html.return_value = "<html>ok</html>"
+    monkeypatch.setattr(api, "RouterClient", lambda *args, **kwargs: fake_client)
+    monkeypatch.setattr(
+        api,
+        "ingest_html_snapshot",
+        lambda _db_path, _html: {"seen_at": "2026-03-03T00:00:00+00:00"},
+    )
+    api.STATE.update(
+        {
+            "last_ingest": None,
+            "last_result": None,
+            "last_error": "prev error",
+            "last_error_at": "2026-03-02T00:00:00+00:00",
+            "consecutive_failures": 7,
+        }
+    )
+
+    api.poll_loop(StopAfterOneWait())
+
+    assert api.STATE["last_ingest"] == "2026-03-03T00:00:00+00:00"
+    assert api.STATE["last_error"] is None
+    assert api.STATE["last_error_at"] is None
+    assert api.STATE["consecutive_failures"] == 0
+
+
+def test_poll_loop_sets_failure_state(tmp_path, monkeypatch):
+    db_path = tmp_path / "router.db"
+    api = load_api_module(monkeypatch, db_path)
+
+    class StopAfterOneWait:
+        def __init__(self):
+            self._done = False
+
+        def is_set(self):
+            return self._done
+
+        def wait(self, _seconds):
+            self._done = True
+
+    fake_client = Mock()
+    fake_client.fetch_connected_devices_html.side_effect = TimeoutError("timed out")
+    monkeypatch.setattr(api, "RouterClient", lambda *args, **kwargs: fake_client)
+    monkeypatch.setattr(api, "now_iso_utc", lambda: "2026-03-03T00:10:00+00:00")
+    api.STATE.update(
+        {
+            "last_ingest": None,
+            "last_result": None,
+            "last_error": None,
+            "last_error_at": None,
+            "consecutive_failures": 1,
+        }
+    )
+
+    api.poll_loop(StopAfterOneWait())
+
+    assert "timed out" in api.STATE["last_error"]
+    assert api.STATE["last_error_at"] == "2026-03-03T00:10:00+00:00"
+    assert api.STATE["consecutive_failures"] == 2
