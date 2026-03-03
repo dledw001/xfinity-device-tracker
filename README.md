@@ -6,6 +6,7 @@ Something I'm building to help track devices on my local network. This works wit
 - Python `3.12+`
 - `pip`
 - Dependencies in `requirements.txt`
+- Test/dev dependencies in `requirements-dev.txt`
 
 ## Run
 - Backend API:
