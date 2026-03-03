@@ -122,7 +122,13 @@ def now_iso_utc() -> str:
 
 def poll_loop(stop_event: Event) -> None:
     client = RouterClient(
-        settings.base_url, settings.router_username, settings.router_password
+        settings.base_url,
+        settings.router_username,
+        settings.router_password,
+        connect_timeout_seconds=settings.router_connect_timeout_seconds,
+        read_timeout_seconds=settings.router_read_timeout_seconds,
+        fetch_retries=settings.router_fetch_retries,
+        retry_backoff_seconds=settings.router_retry_backoff_seconds,
     )
 
     while not stop_event.is_set():
@@ -140,7 +146,14 @@ def poll_loop(stop_event: Event) -> None:
             STATE["consecutive_failures"] = (
                 int(STATE.get("consecutive_failures", 0)) + 1
             )
-        stop_event.wait(settings.poll_seconds)
+        failures = int(STATE.get("consecutive_failures", 0))
+        poll_delay = settings.poll_seconds
+        if failures > 1:
+            poll_delay = min(
+                settings.poll_seconds * failures,
+                settings.poll_backoff_max_seconds,
+            )
+        stop_event.wait(poll_delay)
 
 
 @asynccontextmanager

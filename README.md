@@ -24,7 +24,12 @@ Something I'm building to help track devices on my local network. This works wit
 - `ROUTER_PASSWORD` (required)
 - `DB_PATH` (optional, default `router.db`)
 - `POLL_SECONDS` (optional, default `60`)
+- `POLL_BACKOFF_MAX_SECONDS` (optional, default `300`)
 - `API_TOKEN` (optional, default `changeme`)
+- `ROUTER_CONNECT_TIMEOUT_SECONDS` (optional, default `5`)
+- `ROUTER_READ_TIMEOUT_SECONDS` (optional, default `30`)
+- `ROUTER_FETCH_RETRIES` (optional, default `2`)
+- `ROUTER_RETRY_BACKOFF_SECONDS` (optional, default `1`)
 - `CORS_ORIGINS` (optional, comma-separated list)
   - Default supports local dev origins: `http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost:3000`, `http://127.0.0.1:3000`
 

@@ -10,13 +10,21 @@ from fastapi.responses import FileResponse
 from db import connect, init_db, insert_observations, upsert_device
 
 
-def load_api_module(monkeypatch, db_path):
+def load_api_module(monkeypatch, db_path, extra_env=None):
     monkeypatch.setenv("ROUTER_IP", "10.0.0.1")
     monkeypatch.setenv("ROUTER_USERNAME", "admin")
     monkeypatch.setenv("ROUTER_PASSWORD", "password")
     monkeypatch.setenv("API_TOKEN", "token123")
     monkeypatch.setenv("DB_PATH", str(db_path))
     monkeypatch.setenv("POLL_SECONDS", "60")
+    monkeypatch.setenv("POLL_BACKOFF_MAX_SECONDS", "300")
+    monkeypatch.setenv("ROUTER_CONNECT_TIMEOUT_SECONDS", "5")
+    monkeypatch.setenv("ROUTER_READ_TIMEOUT_SECONDS", "30")
+    monkeypatch.setenv("ROUTER_FETCH_RETRIES", "2")
+    monkeypatch.setenv("ROUTER_RETRY_BACKOFF_SECONDS", "1")
+    if extra_env:
+        for key, value in extra_env.items():
+            monkeypatch.setenv(key, str(value))
 
     if "api" in sys.modules:
         del sys.modules["api"]
@@ -463,13 +471,16 @@ def test_poll_loop_sets_success_state(tmp_path, monkeypatch):
     class StopAfterOneWait:
         def __init__(self):
             self._done = False
+            self.wait_seconds = None
 
         def is_set(self):
             return self._done
 
-        def wait(self, _seconds):
+        def wait(self, seconds):
+            self.wait_seconds = seconds
             self._done = True
 
+    stop = StopAfterOneWait()
     fake_client = Mock()
     fake_client.fetch_connected_devices_html.return_value = "<html>ok</html>"
     monkeypatch.setattr(api, "RouterClient", lambda *args, **kwargs: fake_client)
@@ -488,12 +499,13 @@ def test_poll_loop_sets_success_state(tmp_path, monkeypatch):
         }
     )
 
-    api.poll_loop(StopAfterOneWait())
+    api.poll_loop(stop)
 
     assert api.STATE["last_ingest"] == "2026-03-03T00:00:00+00:00"
     assert api.STATE["last_error"] is None
     assert api.STATE["last_error_at"] is None
     assert api.STATE["consecutive_failures"] == 0
+    assert stop.wait_seconds == 60
 
 
 def test_poll_loop_sets_failure_state(tmp_path, monkeypatch):
@@ -503,13 +515,16 @@ def test_poll_loop_sets_failure_state(tmp_path, monkeypatch):
     class StopAfterOneWait:
         def __init__(self):
             self._done = False
+            self.wait_seconds = None
 
         def is_set(self):
             return self._done
 
-        def wait(self, _seconds):
+        def wait(self, seconds):
+            self.wait_seconds = seconds
             self._done = True
 
+    stop = StopAfterOneWait()
     fake_client = Mock()
     fake_client.fetch_connected_devices_html.side_effect = TimeoutError("timed out")
     monkeypatch.setattr(api, "RouterClient", lambda *args, **kwargs: fake_client)
@@ -524,8 +539,56 @@ def test_poll_loop_sets_failure_state(tmp_path, monkeypatch):
         }
     )
 
-    api.poll_loop(StopAfterOneWait())
+    api.poll_loop(stop)
 
     assert "timed out" in api.STATE["last_error"]
     assert api.STATE["last_error_at"] == "2026-03-03T00:10:00+00:00"
     assert api.STATE["consecutive_failures"] == 2
+    assert stop.wait_seconds == 120
+
+
+def test_poll_loop_uses_router_client_timeouts_and_retries(tmp_path, monkeypatch):
+    db_path = tmp_path / "router.db"
+    api = load_api_module(
+        monkeypatch,
+        db_path,
+        extra_env={
+            "ROUTER_CONNECT_TIMEOUT_SECONDS": "4",
+            "ROUTER_READ_TIMEOUT_SECONDS": "45",
+            "ROUTER_FETCH_RETRIES": "3",
+            "ROUTER_RETRY_BACKOFF_SECONDS": "2",
+        },
+    )
+
+    captured = {}
+
+    class StopAfterOneWait:
+        def __init__(self):
+            self._done = False
+
+        def is_set(self):
+            return self._done
+
+        def wait(self, _seconds):
+            self._done = True
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+
+        def fetch_connected_devices_html(self):
+            return "<html>ok</html>"
+
+    monkeypatch.setattr(api, "RouterClient", FakeClient)
+    monkeypatch.setattr(
+        api,
+        "ingest_html_snapshot",
+        lambda _db_path, _html: {"seen_at": "2026-03-03T00:00:00+00:00"},
+    )
+
+    api.poll_loop(StopAfterOneWait())
+
+    assert captured["connect_timeout_seconds"] == 4
+    assert captured["read_timeout_seconds"] == 45
+    assert captured["fetch_retries"] == 3
+    assert captured["retry_backoff_seconds"] == 2
