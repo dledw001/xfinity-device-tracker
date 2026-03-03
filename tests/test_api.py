@@ -1,9 +1,11 @@
 import importlib
 import sys
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 from fastapi import HTTPException
+from fastapi.responses import FileResponse
 
 from db import connect, init_db, insert_observations, upsert_device
 
@@ -99,6 +101,23 @@ def test_health_reports_not_ok_when_last_error_present(tmp_path, monkeypatch):
     assert payload["last_error"] == "boom"
     assert payload["last_error_at"] == "2026-03-02T23:30:00+00:00"
     assert payload["consecutive_failures"] == 2
+
+
+def test_favicon_route_returns_file_response(tmp_path, monkeypatch):
+    api = load_api_module(monkeypatch, tmp_path / "router.db")
+
+    response = api.favicon()
+    assert isinstance(response, FileResponse)
+    assert Path(response.path).name == "favicon.ico"
+
+
+def test_favicon_route_404_when_file_missing(tmp_path, monkeypatch):
+    api = load_api_module(monkeypatch, tmp_path / "router.db")
+    monkeypatch.setattr(api, "FAVICON_PATH", tmp_path / "does-not-exist.ico")
+
+    with pytest.raises(HTTPException) as exc:
+        api.favicon()
+    assert exc.value.status_code == 404
 
 
 def test_devices_alias_endpoint_matches_latest(tmp_path, monkeypatch):

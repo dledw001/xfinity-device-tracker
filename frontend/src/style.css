@@ -1,0 +1,195 @@
+﻿:root {
+  --bg: linear-gradient(150deg, #f4f7ff 0%, #eefaf3 60%, #fff7ea 100%);
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-strong: #ffffff;
+  --border: #d8dfed;
+  --text: #1e2a3a;
+  --muted: #5c6b80;
+  --accent: #0059d6;
+  --accent-soft: #dceaff;
+  --ok: #1f8f48;
+  --warn: #b14700;
+  --error: #b5002d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Avenir Next", "Segoe UI", "Noto Sans", sans-serif;
+}
+
+.shell {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.topbar h1 {
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.controls {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.health-card {
+  margin-top: 0.9rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.8rem;
+}
+
+.table-wrap {
+  margin-top: 0.9rem;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1200px;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.6rem;
+  vertical-align: top;
+  text-align: left;
+}
+
+th {
+  font-size: 0.84rem;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.status-badge {
+  display: inline-block;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  text-transform: capitalize;
+  font-size: 0.8rem;
+}
+
+.badge-online {
+  background: #d9f8e5;
+  color: var(--ok);
+}
+
+.badge-offline {
+  background: #ffe9db;
+  color: var(--warn);
+}
+
+.row-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 0.45rem;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+label span {
+  display: block;
+  margin-bottom: 0.18rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+input[type="text"] {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem;
+  background: #fff;
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.btn-save,
+.btn-secondary {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem 0.62rem;
+  cursor: pointer;
+  background: #fff;
+}
+
+.btn-save {
+  background: var(--accent);
+  border-color: #024cb8;
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn-save:disabled,
+.btn-secondary:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+code {
+  font-family: "Consolas", "Monaco", monospace;
+  font-size: 0.83rem;
+  background: var(--accent-soft);
+  padding: 0.1rem 0.25rem;
+  border-radius: 6px;
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    flex-direction: column;
+  }
+
+  .health-card {
+    grid-template-columns: 1fr;
+  }
+}

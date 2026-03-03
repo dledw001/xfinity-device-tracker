@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from threading import Event, Thread
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from config import get_settings
@@ -20,6 +22,7 @@ STATE: Dict[str, Any] = {
     "consecutive_failures": 0,
 }
 settings = get_settings()
+FAVICON_PATH = Path(__file__).resolve().parent / "static" / "favicon.ico"
 
 
 class DevicePatchRequest(BaseModel):
@@ -197,6 +200,13 @@ def health():
         "consecutive_failures": STATE["consecutive_failures"],
         "poll_seconds": settings.poll_seconds,
     }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    if not FAVICON_PATH.exists():
+        raise HTTPException(status_code=404, detail="favicon not found")
+    return FileResponse(FAVICON_PATH)
 
 
 @app.get("/devices/latest", response_model=DevicesLatestResponse)

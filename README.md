@@ -11,8 +11,12 @@ Something I'm building to help track devices on my local network. This works wit
 ## Run
 - Backend API:
   - `uvicorn api:app --host 0.0.0.0 --port 8000`
-- Frontend web UI:
-  - coming soon
+- Frontend web UI (Vite + Vanilla TS):
+  - `cd frontend`
+  - `cp .env.example .env` (PowerShell: `Copy-Item .env.example .env`)
+  - `npm install`
+  - `npm run dev`
+  - Open from another machine: `http://<host-machine-ip>:5173`
 
 ## Environment Variables
 - `ROUTER_IP` (required)
@@ -119,6 +123,7 @@ Something I'm building to help track devices on my local network. This works wit
 ```
 
 ## Frontend Notes
-- Local dev frontends on ports `5173`/`3000` are allowed by default CORS config.
+- Frontend defaults `VITE_API_BASE_URL=/api`, which is proxied by Vite to backend `http://127.0.0.1:8000`.
+- For direct API calls (without Vite proxy), include your frontend origin in `CORS_ORIGINS`.
 - Include `X-Token` header on all `/devices*` calls.
 - Use `display_name` for labels in UI.

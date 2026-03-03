@@ -6,3 +6,7 @@ router.db
 sample.html
 .tmp/
 next_steps.txt
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.env
