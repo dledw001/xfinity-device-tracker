@@ -7,12 +7,12 @@ def test_init_db_creates_tables(tmp_path):
     init_db(conn)
 
     rows = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('devices','observations')"
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('devices','observations','groups','device_groups')"
     ).fetchall()
     conn.close()
 
     table_names = sorted([r["name"] for r in rows])
-    assert table_names == ["devices", "observations"]
+    assert table_names == ["device_groups", "devices", "groups", "observations"]
 
 
 def test_upsert_device_inserts_then_updates(tmp_path):
@@ -103,3 +103,37 @@ def test_init_db_migrates_legacy_devices_table(tmp_path):
     assert row["category"] is None
     assert row["is_hidden"] == 0
     assert row["is_tracked"] == 1
+
+
+def test_init_db_creates_group_tables_for_legacy_databases(tmp_path):
+    db_path = tmp_path / "router.db"
+    conn = connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE devices (
+          mac TEXT PRIMARY KEY,
+          first_seen TEXT NOT NULL,
+          last_seen TEXT NOT NULL,
+          last_host_name TEXT,
+          notes TEXT
+        );
+        CREATE TABLE observations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          mac TEXT NOT NULL,
+          seen_at TEXT NOT NULL,
+          status TEXT NOT NULL,
+          source TEXT NOT NULL
+        );
+        """
+    )
+    conn.commit()
+
+    init_db(conn)
+
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('groups','device_groups')"
+    ).fetchall()
+    conn.close()
+
+    table_names = sorted([r["name"] for r in rows])
+    assert table_names == ["device_groups", "groups"]

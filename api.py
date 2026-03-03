@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+import sqlite3
 from threading import Event, Thread
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional, Set
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -62,6 +63,7 @@ class DeviceSnapshot(BaseModel):
     first_seen: str
     last_seen: str
     display_name: str
+    groups: List[str] = []
 
 
 class DevicesLatestResponse(BaseModel):
@@ -81,6 +83,32 @@ class DeviceMetadataResponse(BaseModel):
     is_hidden: bool
     is_tracked: bool
     display_name: str
+
+
+class GroupSummary(BaseModel):
+    id: int
+    name: str
+    device_count: int = 0
+
+
+class GroupsResponse(BaseModel):
+    count: int
+    groups: List[GroupSummary]
+
+
+class GroupCreateRequest(BaseModel):
+    name: str
+    model_config = {"extra": "forbid"}
+
+
+class GroupResponse(BaseModel):
+    id: int
+    name: str
+
+
+class BulkGroupAssignRequest(BaseModel):
+    macs: List[str]
+    model_config = {"extra": "forbid"}
 
 
 def require_token(x_token: Optional[str]) -> None:
@@ -150,11 +178,60 @@ def to_display_name(device: Dict[str, Any]) -> str:
     )
 
 
-def fetch_latest_devices_payload() -> Dict[str, Any]:
+def normalize_group_name(name: str) -> str:
+    normalized = name.strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="group name cannot be blank")
+    return normalized
+
+
+def fetch_group_ids_for_filter(conn, group_id: int, macs: Set[str]) -> Set[str]:
+    if not macs:
+        return set()
+    placeholders = ", ".join(["?"] * len(macs))
+    rows = conn.execute(
+        f"""
+        SELECT mac
+        FROM device_groups
+        WHERE group_id = ? AND mac IN ({placeholders})
+        """,
+        [group_id, *sorted(macs)],
+    ).fetchall()
+    return {row["mac"] for row in rows}
+
+
+def fetch_groups_by_mac(conn, macs: Set[str]) -> Dict[str, List[str]]:
+    if not macs:
+        return {}
+    placeholders = ", ".join(["?"] * len(macs))
+    rows = conn.execute(
+        f"""
+        SELECT dg.mac, g.name
+        FROM device_groups dg
+        JOIN groups g ON g.id = dg.group_id
+        WHERE dg.mac IN ({placeholders})
+        ORDER BY g.name
+        """,
+        sorted(macs),
+    ).fetchall()
+    by_mac: Dict[str, List[str]] = {mac: [] for mac in macs}
+    for row in rows:
+        by_mac[row["mac"]].append(row["name"])
+    return by_mac
+
+
+def fetch_latest_devices_payload(group_id: Optional[int] = None) -> Dict[str, Any]:
     conn = connect(settings.db_path)
     init_db(conn)
 
     try:
+        if group_id is not None:
+            group_exists = conn.execute(
+                "SELECT 1 FROM groups WHERE id = ?", (group_id,)
+            ).fetchone()
+            if not group_exists:
+                raise HTTPException(status_code=404, detail="group not found")
+
         row = conn.execute(
             "SELECT MAX(seen_at) AS seen_at FROM observations"
         ).fetchone()
@@ -178,14 +255,22 @@ def fetch_latest_devices_payload() -> Dict[str, Any]:
             """,
             (seen_at,),
         ).fetchall()
+
+        materialized = [dict(d) for d in devices]
+        macs = {d["mac"] for d in materialized}
+        groups_by_mac = fetch_groups_by_mac(conn, macs)
+
+        if group_id is not None:
+            allowed_macs = fetch_group_ids_for_filter(conn, group_id, macs)
+            materialized = [d for d in materialized if d["mac"] in allowed_macs]
     finally:
         conn.close()
 
-    materialized = [dict(d) for d in devices]
     for device in materialized:
         device["is_hidden"] = bool(device["is_hidden"])
         device["is_tracked"] = bool(device["is_tracked"])
         device["display_name"] = to_display_name(device)
+        device["groups"] = groups_by_mac.get(device["mac"], [])
 
     return {"seen_at": seen_at, "count": len(materialized), "devices": materialized}
 
@@ -210,15 +295,168 @@ def favicon():
 
 
 @app.get("/devices/latest", response_model=DevicesLatestResponse)
-def devices_latest(x_token: Optional[str] = Header(default=None)):
+def devices_latest(
+    x_token: Optional[str] = Header(default=None),
+    group_id: Annotated[Optional[int], Query(ge=1)] = None,
+):
     require_token(x_token)
-    return fetch_latest_devices_payload()
+    return fetch_latest_devices_payload(group_id=group_id)
 
 
 @app.get("/devices", response_model=DevicesLatestResponse)
-def devices_list(x_token: Optional[str] = Header(default=None)):
+def devices_list(
+    x_token: Optional[str] = Header(default=None),
+    group_id: Annotated[Optional[int], Query(ge=1)] = None,
+):
     require_token(x_token)
-    return fetch_latest_devices_payload()
+    return fetch_latest_devices_payload(group_id=group_id)
+
+
+@app.get("/groups", response_model=GroupsResponse)
+def groups_list(x_token: Optional[str] = Header(default=None)):
+    require_token(x_token)
+
+    conn = connect(settings.db_path)
+    init_db(conn)
+    try:
+        groups = conn.execute(
+            """
+            SELECT g.id, g.name, COUNT(dg.mac) AS device_count
+            FROM groups g
+            LEFT JOIN device_groups dg ON dg.group_id = g.id
+            GROUP BY g.id, g.name
+            ORDER BY g.name
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    payload = [dict(group) for group in groups]
+    return {"count": len(payload), "groups": payload}
+
+
+@app.post("/groups", response_model=GroupResponse, status_code=201)
+def groups_create(
+    group: GroupCreateRequest, x_token: Optional[str] = Header(default=None)
+):
+    require_token(x_token)
+    name = normalize_group_name(group.name)
+
+    conn = connect(settings.db_path)
+    init_db(conn)
+    try:
+        try:
+            conn.execute("INSERT INTO groups(name) VALUES(?)", (name,))
+            conn.commit()
+        except sqlite3.IntegrityError as exc:
+            msg = str(exc).lower()
+            if "unique" in msg:
+                raise HTTPException(status_code=409, detail="group already exists")
+            raise
+
+        row = conn.execute(
+            "SELECT id, name FROM groups WHERE name = ?", (name,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    return dict(row)
+
+
+def require_device_exists(conn, mac_norm: str) -> None:
+    exists = conn.execute("SELECT 1 FROM devices WHERE mac = ?", (mac_norm,)).fetchone()
+    if not exists:
+        raise HTTPException(status_code=404, detail="device not found")
+
+
+def require_group_exists(conn, group_id: int) -> None:
+    exists = conn.execute("SELECT 1 FROM groups WHERE id = ?", (group_id,)).fetchone()
+    if not exists:
+        raise HTTPException(status_code=404, detail="group not found")
+
+
+@app.post("/devices/{mac}/groups/{group_id}", status_code=204)
+def add_device_group(
+    mac: str,
+    group_id: int,
+    x_token: Optional[str] = Header(default=None),
+):
+    require_token(x_token)
+    mac_norm = normalize_mac(mac)
+
+    conn = connect(settings.db_path)
+    init_db(conn)
+    try:
+        require_device_exists(conn, mac_norm)
+        require_group_exists(conn, group_id)
+        conn.execute(
+            "INSERT OR IGNORE INTO device_groups(mac, group_id) VALUES(?, ?)",
+            (mac_norm, group_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@app.delete("/devices/{mac}/groups/{group_id}", status_code=204)
+def remove_device_group(
+    mac: str,
+    group_id: int,
+    x_token: Optional[str] = Header(default=None),
+):
+    require_token(x_token)
+    mac_norm = normalize_mac(mac)
+
+    conn = connect(settings.db_path)
+    init_db(conn)
+    try:
+        require_device_exists(conn, mac_norm)
+        require_group_exists(conn, group_id)
+        conn.execute(
+            "DELETE FROM device_groups WHERE mac = ? AND group_id = ?",
+            (mac_norm, group_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@app.post("/groups/{group_id}/devices", status_code=204)
+def bulk_assign_group(
+    group_id: int,
+    payload: BulkGroupAssignRequest,
+    x_token: Optional[str] = Header(default=None),
+):
+    require_token(x_token)
+
+    macs = sorted({normalize_mac(mac) for mac in payload.macs})
+    if not macs:
+        raise HTTPException(status_code=400, detail="macs cannot be empty")
+
+    conn = connect(settings.db_path)
+    init_db(conn)
+    try:
+        require_group_exists(conn, group_id)
+
+        placeholders = ", ".join(["?"] * len(macs))
+        found = conn.execute(
+            f"SELECT mac FROM devices WHERE mac IN ({placeholders})", macs
+        ).fetchall()
+        found_macs = {row["mac"] for row in found}
+        missing = [mac for mac in macs if mac not in found_macs]
+        if missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"device not found: {missing[0]}",
+            )
+
+        conn.executemany(
+            "INSERT OR IGNORE INTO device_groups(mac, group_id) VALUES(?, ?)",
+            [(mac, group_id) for mac in macs],
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 @app.patch("/devices/{mac}", response_model=DeviceMetadataResponse)

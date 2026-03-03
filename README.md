@@ -52,6 +52,7 @@ Something I'm building to help track devices on my local network. This works wit
 ### `GET /devices/latest`
 - Auth: yes (`X-Token`)
 - Purpose: latest observation snapshot with merged device metadata
+- Optional query: `group_id` (integer) to return only devices tagged with a specific group
 - Response example:
 ```json
 {
@@ -76,7 +77,8 @@ Something I'm building to help track devices on my local network. This works wit
       "last_host_name": "example-device",
       "first_seen": "2026-03-02T22:00:00+00:00",
       "last_seen": "2026-03-02T23:22:19+00:00",
-      "display_name": "Office Sensor"
+      "display_name": "Office Sensor",
+      "groups": ["Living Room", "IoT"]
     }
   ]
 }
@@ -85,6 +87,31 @@ Something I'm building to help track devices on my local network. This works wit
 ### `GET /devices`
 - Auth: yes (`X-Token`)
 - Purpose: alias for `/devices/latest` (same response shape)
+- Optional query: `group_id`
+
+### `GET /groups`
+- Auth: yes (`X-Token`)
+- Purpose: list all group labels and device counts
+
+### `POST /groups`
+- Auth: yes (`X-Token`)
+- Purpose: create a new group label
+- Request body:
+  - `name` (string, non-blank)
+
+### `POST /devices/{mac}/groups/{group_id}`
+- Auth: yes (`X-Token`)
+- Purpose: assign a group to one device
+
+### `DELETE /devices/{mac}/groups/{group_id}`
+- Auth: yes (`X-Token`)
+- Purpose: remove a group from one device
+
+### `POST /groups/{group_id}/devices`
+- Auth: yes (`X-Token`)
+- Purpose: bulk assign a group to multiple devices
+- Request body:
+  - `macs` (non-empty array of MAC strings)
 
 ### `PATCH /devices/{mac}`
 - Auth: yes (`X-Token`)

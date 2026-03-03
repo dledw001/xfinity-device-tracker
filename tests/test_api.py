@@ -80,6 +80,7 @@ def test_devices_latest_returns_data_for_latest_snapshot(tmp_path, monkeypatch):
     assert payload["devices"][0]["display_name"] == "Laptop"
     assert payload["devices"][0]["is_hidden"] is False
     assert payload["devices"][0]["is_tracked"] is True
+    assert payload["devices"][0]["groups"] == []
 
 
 def test_devices_latest_with_fresh_db_returns_503_not_500(tmp_path, monkeypatch):
@@ -153,6 +154,167 @@ def test_devices_alias_endpoint_matches_latest(tmp_path, monkeypatch):
     latest = api.devices_latest(x_token="token123")
     listing = api.devices_list(x_token="token123")
     assert listing == latest
+
+
+def test_groups_endpoints_require_token(tmp_path, monkeypatch):
+    api = load_api_module(monkeypatch, tmp_path / "router.db")
+
+    with pytest.raises(HTTPException) as exc:
+        api.groups_list(x_token=None)
+    assert exc.value.status_code == 401
+
+
+def test_groups_create_and_list(tmp_path, monkeypatch):
+    api = load_api_module(monkeypatch, tmp_path / "router.db")
+
+    created = api.groups_create(
+        api.GroupCreateRequest(name="Living Room"),
+        x_token="token123",
+    )
+    assert created["id"] > 0
+    assert created["name"] == "Living Room"
+
+    listed = api.groups_list(x_token="token123")
+    assert listed["count"] == 1
+    assert listed["groups"][0]["name"] == "Living Room"
+    assert listed["groups"][0]["device_count"] == 0
+
+
+def test_groups_create_rejects_duplicate_name(tmp_path, monkeypatch):
+    api = load_api_module(monkeypatch, tmp_path / "router.db")
+    api.groups_create(api.GroupCreateRequest(name="IoT"), x_token="token123")
+
+    with pytest.raises(HTTPException) as exc:
+        api.groups_create(api.GroupCreateRequest(name="IoT"), x_token="token123")
+    assert exc.value.status_code == 409
+
+
+def test_device_group_assignment_and_filtering(tmp_path, monkeypatch):
+    db_path = tmp_path / "router.db"
+    api = load_api_module(monkeypatch, db_path)
+
+    conn = connect(db_path)
+    init_db(conn)
+    upsert_device(
+        conn, mac="AA:BB", seen_at="2026-03-02T00:00:00+00:00", host_name="Laptop"
+    )
+    upsert_device(
+        conn, mac="CC:DD", seen_at="2026-03-02T00:00:00+00:00", host_name="Phone"
+    )
+    insert_observations(
+        conn,
+        [
+            {
+                "mac": "AA:BB",
+                "seen_at": "2026-03-02T00:00:00+00:00",
+                "status": "online",
+                "host_name": "Laptop",
+                "dhcp_mode": "DHCP",
+                "rssi_dbm": -55,
+                "connection_type": "WiFi",
+                "ipv4": "10.0.0.2",
+                "ipv6_global": None,
+                "ipv6_linklocal": None,
+                "source": "connected_devices_computers.jst",
+            },
+            {
+                "mac": "CC:DD",
+                "seen_at": "2026-03-02T00:00:00+00:00",
+                "status": "offline",
+                "host_name": "Phone",
+                "dhcp_mode": "DHCP",
+                "rssi_dbm": None,
+                "connection_type": "WiFi",
+                "ipv4": "10.0.0.3",
+                "ipv6_global": None,
+                "ipv6_linklocal": None,
+                "source": "connected_devices_computers.jst",
+            },
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    group = api.groups_create(api.GroupCreateRequest(name="Family"), x_token="token123")
+    api.add_device_group("aa:bb", group["id"], x_token="token123")
+
+    all_devices = api.devices_list(x_token="token123")
+    by_mac = {d["mac"]: d for d in all_devices["devices"]}
+    assert by_mac["AA:BB"]["groups"] == ["Family"]
+    assert by_mac["CC:DD"]["groups"] == []
+
+    filtered = api.devices_list(x_token="token123", group_id=group["id"])
+    assert filtered["count"] == 1
+    assert filtered["devices"][0]["mac"] == "AA:BB"
+
+    api.remove_device_group("AA:BB", group["id"], x_token="token123")
+    filtered_after = api.devices_list(x_token="token123", group_id=group["id"])
+    assert filtered_after["count"] == 0
+
+
+def test_devices_filter_unknown_group_returns_404(tmp_path, monkeypatch):
+    api = load_api_module(monkeypatch, tmp_path / "router.db")
+
+    with pytest.raises(HTTPException) as exc:
+        api.devices_list(x_token="token123", group_id=9999)
+    assert exc.value.status_code == 404
+
+
+def test_bulk_group_assign_tags_multiple_devices(tmp_path, monkeypatch):
+    db_path = tmp_path / "router.db"
+    api = load_api_module(monkeypatch, db_path)
+
+    conn = connect(db_path)
+    init_db(conn)
+    upsert_device(
+        conn, mac="AA:BB", seen_at="2026-03-02T00:00:00+00:00", host_name="Laptop"
+    )
+    upsert_device(
+        conn, mac="CC:DD", seen_at="2026-03-02T00:00:00+00:00", host_name="Phone"
+    )
+    insert_observations(
+        conn,
+        [
+            {
+                "mac": "AA:BB",
+                "seen_at": "2026-03-02T00:00:00+00:00",
+                "status": "online",
+                "host_name": "Laptop",
+                "dhcp_mode": "DHCP",
+                "rssi_dbm": -55,
+                "connection_type": "WiFi",
+                "ipv4": "10.0.0.2",
+                "ipv6_global": None,
+                "ipv6_linklocal": None,
+                "source": "connected_devices_computers.jst",
+            },
+            {
+                "mac": "CC:DD",
+                "seen_at": "2026-03-02T00:00:00+00:00",
+                "status": "online",
+                "host_name": "Phone",
+                "dhcp_mode": "DHCP",
+                "rssi_dbm": -45,
+                "connection_type": "WiFi",
+                "ipv4": "10.0.0.3",
+                "ipv6_global": None,
+                "ipv6_linklocal": None,
+                "source": "connected_devices_computers.jst",
+            },
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    group = api.groups_create(api.GroupCreateRequest(name="BulkTag"), x_token="token123")
+    api.bulk_assign_group(
+        group["id"],
+        api.BulkGroupAssignRequest(macs=["aa:bb", "CC:DD"]),
+        x_token="token123",
+    )
+
+    filtered = api.devices_list(x_token="token123", group_id=group["id"])
+    assert filtered["count"] == 2
 
 
 def test_update_device_patch_updates_metadata(tmp_path, monkeypatch):

@@ -39,8 +39,23 @@ CREATE TABLE IF NOT EXISTS observations (
   FOREIGN KEY(mac) REFERENCES devices(mac)
 );
 
+CREATE TABLE IF NOT EXISTS groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS device_groups (
+  mac TEXT NOT NULL,
+  group_id INTEGER NOT NULL,
+  PRIMARY KEY (mac, group_id),
+  FOREIGN KEY(mac) REFERENCES devices(mac),
+  FOREIGN KEY(group_id) REFERENCES groups(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_obs_mac_seenat ON observations(mac, seen_at);
 CREATE INDEX IF NOT EXISTS idx_obs_seenat ON observations(seen_at);
+CREATE INDEX IF NOT EXISTS idx_groups_name ON groups(name);
+CREATE INDEX IF NOT EXISTS idx_device_groups_group_id ON device_groups(group_id);
 """
 
 

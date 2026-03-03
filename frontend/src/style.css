@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --bg: linear-gradient(150deg, #f4f7ff 0%, #eefaf3 60%, #fff7ea 100%);
   --surface: rgba(255, 255, 255, 0.9);
   --surface-strong: #ffffff;
@@ -25,7 +25,7 @@ body {
 }
 
 .shell {
-  max-width: 1440px;
+  max-width: 1500px;
   margin: 0 auto;
   padding: 1.25rem;
 }
@@ -46,7 +46,7 @@ body {
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: end;
 }
 
 .health-card {
@@ -60,6 +60,26 @@ body {
   padding: 0.8rem;
 }
 
+.group-toolbar {
+  margin-top: 0.9rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem;
+}
+
+.group-create-row,
+.group-bulk-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
 .table-wrap {
   margin-top: 0.9rem;
   overflow: auto;
@@ -71,7 +91,7 @@ body {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 1200px;
+  min-width: 1350px;
 }
 
 th,
@@ -107,6 +127,12 @@ th {
   font-size: 0.8rem;
 }
 
+.status-row {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
 .badge-online {
   background: #d9f8e5;
   color: var(--ok);
@@ -115,6 +141,15 @@ th {
 .badge-offline {
   background: #ffe9db;
   color: var(--warn);
+}
+
+.badge-stale {
+  background: #fff1d8;
+  color: #9a5a00;
+}
+
+.quick-actions {
+  margin-bottom: 0.4rem;
 }
 
 .row-edit-form {
@@ -140,12 +175,16 @@ label span {
   font-size: 0.78rem;
 }
 
-input[type="text"] {
-  width: 100%;
+input[type="text"],
+select {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.45rem;
   background: #fff;
+}
+
+input[type="text"] {
+  width: 100%;
 }
 
 .checkbox-row {
@@ -176,6 +215,43 @@ input[type="text"] {
   cursor: not-allowed;
 }
 
+.group-section {
+  margin-top: 0.45rem;
+  border-top: 1px dashed var(--border);
+  padding-top: 0.45rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #bfd0f2;
+  background: #e9f1ff;
+  color: #214269;
+  padding: 0.13rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.chip-empty {
+  background: #f2f4f8;
+  border-color: #d8dfed;
+  color: var(--muted);
+}
+
+.group-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
 code {
   font-family: "Consolas", "Monaco", monospace;
   font-size: 0.83rem;
@@ -191,5 +267,9 @@ code {
 
   .health-card {
     grid-template-columns: 1fr;
+  }
+
+  .group-toolbar {
+    flex-direction: column;
   }
 }
