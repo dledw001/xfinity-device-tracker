@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from ingest import clean_text, dl_to_map, parse_connected_devices, parse_rssi_dbm
 
 
@@ -104,10 +102,106 @@ def test_parse_connected_devices_parses_online_and_offline_rows():
     assert offline["mac"] == "11:22:33:44:55:66"
 
 
-def test_parse_connected_devices_with_sample_html_snapshot():
-    html = Path("sample.html").read_text(encoding="utf-8", errors="ignore")
-    rows = parse_connected_devices(html)
+def test_parse_connected_devices_handles_router_like_mixed_markup_snapshot():
+    html = """
+    <div id="online-private">
+      <table class="data">
+        <tr><th>header</th></tr>
+        <tr>
+          <td headers="host-name">
+            <a class="device-name">Office-Laptop</a>
+            <div class="device-info"><dl>
+              <dt>MAC Address</dt><dd>aa:bb:cc:dd:ee:01</dd>
+              <dt>IPv4 Address</dt><dd>10.0.0.10</dd>
+              <dt>IPv6 Address</dt><dd>2001:db8::10</dd>
+              <dt>Local Link IPv6 Address</dt><dd>fe80::10</dd>
+            </dl></div>
+          </td>
+          <td headers="dhcp-or-reserved">DHCP</td>
+          <td headers="rssi-level">-48 dBm</td>
+          <td headers="connection-type">Wi-Fi 5G</td>
+        </tr>
+        <tr>
+          <td headers="host-name">
+            <a>LivingRoomTV</a>
+            <div class="device-info"><dl>
+              <dd><b>MAC Address</b></dd> aa:bb:cc:dd:ee:02
+              <dd><b>IPv4 Address</b></dd> 10.0.0.11
+              <dd><b>IPv6 Address</b></dd> NA
+              <dd><b>Local Link IPv6 Address</b></dd> fe80::11
+            </dl></div>
+          </td>
+          <td headers="dhcp-or-reserved">Reserved</td>
+          <td headers="rssi-level">RSSI: -71</td>
+          <td headers="connection-type">Ethernet</td>
+        </tr>
+        <tr>
+          <td headers="host-name">
+            <a class="device-name">NoMacRow</a>
+            <div class="device-info"><dl>
+              <dt>IPv4 Address</dt><dd>10.0.0.12</dd>
+            </dl></div>
+          </td>
+          <td headers="dhcp-or-reserved">DHCP</td>
+          <td headers="rssi-level">-60 dBm</td>
+          <td headers="connection-type">Wi-Fi 2.4G</td>
+        </tr>
+      </table>
+    </div>
+    <div id="offline-private">
+      <table class="data">
+        <tr><th>header</th></tr>
+        <tr>
+          <td headers="offline-device-host-name">
+            <a class="device-name">Guest-Phone</a>
+            <div class="device-info"><dl>
+              <dt>MAC Address</dt><dd>AA:BB:CC:DD:EE:03</dd>
+            </dl></div>
+          </td>
+          <td headers="offline-device-dhcp-reserve">Reserved</td>
+          <td headers="offline-device-conncection">Wi-Fi 2.4G</td>
+        </tr>
+        <tr>
+          <td headers="offline-device-host-name">
+            <a class="device-name">  NA  </a>
+            <div class="device-info"><dl>
+              <dd><b>MAC Address</b></dd> aa:bb:cc:dd:ee:04
+              <dd><b>IPv4 Address</b></dd> NA
+            </dl></div>
+          </td>
+          <td headers="offline-device-dhcp-reserve">DHCP</td>
+          <td headers="offline-device-conncection">Ethernet</td>
+        </tr>
+      </table>
+    </div>
+    """
 
-    assert len(rows) == 87
-    assert sum(1 for r in rows if r["status"] == "online") == 83
-    assert sum(1 for r in rows if r["status"] == "offline") == 4
+    rows = parse_connected_devices(html)
+    assert len(rows) == 4
+    assert sum(1 for r in rows if r["status"] == "online") == 2
+    assert sum(1 for r in rows if r["status"] == "offline") == 2
+
+    by_mac = {r["mac"]: r for r in rows}
+    assert "AA:BB:CC:DD:EE:01" in by_mac
+    assert "AA:BB:CC:DD:EE:02" in by_mac
+    assert "AA:BB:CC:DD:EE:03" in by_mac
+    assert "AA:BB:CC:DD:EE:04" in by_mac
+
+    office = by_mac["AA:BB:CC:DD:EE:01"]
+    assert office["host_name"] == "Office-Laptop"
+    assert office["rssi_dbm"] == -48
+    assert office["ipv6_global"] == "2001:db8::10"
+
+    tv = by_mac["AA:BB:CC:DD:EE:02"]
+    assert tv["host_name"] == "LivingRoomTV"
+    assert tv["rssi_dbm"] == -71
+    assert tv["ipv6_global"] is None
+    assert tv["ipv6_linklocal"] == "fe80::11"
+
+    guest = by_mac["AA:BB:CC:DD:EE:03"]
+    assert guest["status"] == "offline"
+    assert guest["rssi_dbm"] is None
+
+    unknown = by_mac["AA:BB:CC:DD:EE:04"]
+    assert unknown["host_name"] is None
+    assert unknown["ipv4"] is None
